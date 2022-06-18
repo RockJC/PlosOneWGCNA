@@ -1,0 +1,80 @@
+library(WGCNA)
+library(reshape2)
+library(stringr)
+options(stringAsFactor=FALSE)
+enableWGCNAThreads()
+setwd("C:/Users/RockJ/Desktop/CHOL")
+data=read.csv("TCGA_CHOL_lncRNAseq.csv",row.names=1,header=T)
+datExpr=as.data.frame(t(data))
+
+#构建加权网络
+datExpr[]<-lapply(datExpr,as.numeric)##提示不是数值型，使用此代码进行数值转换
+
+net = blockwiseModules(datExpr, power = 6, maxBlockSize = 5000,
+                       TOMType = "unsigned", minModuleSize = 20,
+                       reassignThreshold = 0, mergeCutHeight = 0.25,
+                       numericLabels = TRUE, pamRespectsDendro = FALSE,
+                       saveTOMs = TRUE,
+                       saveTOMFileBase = "lncRNA-TOM",
+                       verbose = 3)
+
+table(net$colors)
+#保存
+moduleLabels = net$colors
+moduleColors = labels2colors(net$colors)
+MEs = net$MEs;
+geneTree = net$dendrograms[[1]];
+save(MEs, moduleLabels, moduleColors, geneTree,
+file = "network-lncRNA.RData")
+
+
+#模块临床关联
+nGenes = ncol(datExpr);
+nSamples = nrow(datExpr);
+MEs0 = moduleEigengenes(datExpr, moduleColors)$eigengenes
+MEs = orderMEs(MEs0)
+moduleTraitCor = cor(MEs, datTraits, use = "p");
+moduleTraitPvalue = corPvalueStudent(moduleTraitCor, nSamples);sizeGrWindow(10,6)
+# Will display correlations and their p-values
+textMatrix = paste(signif(moduleTraitCor, 2), "\n(",
+signif(moduleTraitPvalue, 1), ")", sep = "");
+dim(textMatrix) = dim(moduleTraitCor)
+par(mar = c(6, 8.5, 3, 3));
+# Display the correlation values within a heatmap plot
+labeledHeatmap(Matrix = moduleTraitCor,
+xLabels = names(datTraits),
+yLabels = names(MEs),
+ySymbols = names(MEs),
+colorLabels = FALSE,
+colors = greenWhiteRed(50),
+textMatrix = textMatrix,
+setStdMargins = FALSE,
+cex.text = 0.5,
+zlim = c(-1,1),
+main = paste("Module-trait relationships"))
+
+
+plotDendroAndColors(net$dendrograms[[1]], moduleColors[net$blockGenes[[1]]],
+"module colors", main = "Cluster dendrogram ",
+dendroLabels = FALSE, hang = 0.03,
+addGuide = TRUE, guideHang = 0.05)
+
+
+###导出网络到Cytoscape
+TOM = TOMsimilarityFromExpr(datExpr, power = 6);
+modules = c("yellow");
+
+probes = names(datExpr)
+inModule = is.finite(match(moduleColors, modules));
+modProbes = probes[inModule];
+
+modTOM = TOM[inModule, inModule];
+dimnames(modTOM) = list(modProbes, modProbes)
+
+cyt = exportNetworkToCytoscape(modTOM,
+                               edgeFile = paste("edges-", paste(modules, collapse="-"), ".txt", sep=""),
+                               nodeFile = paste("nodes-", paste(modules, collapse="-"), ".txt", sep=""),
+                               weighted = TRUE,
+                               threshold = 0.02,
+                               nodeNames = modProbes,                               
+                               nodeAttr = moduleColors[inModule]);

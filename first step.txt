@@ -1,0 +1,92 @@
+1、提取出lncRNA的Ensembl_ID
+
+library(rtracklayer)
+AnnoData = import('gencode.v37.long_noncoding_RNAs.gtf.gz')
+
+将3列信息单独提出来：
+index = which(AnnoData$type == 'gene')
+Target = data.frame(Ensembl_ID = AnnoData$gene_id[index], Symbol =
+AnnoData$gene_name[index], Biotype = AnnoData$gene_type[index])
+
+在与RNA数据取lncRNA交集之前需要先把Ensembl_ID中的版本号去
+除掉：
+Target$Ensembl_ID = gsub('\\..*', '', Target$Ensembl_ID)
+##看看都多少行，此处为60483行
+
+m <- read.csv(file = "C:/Users/RockJ/Desktop/CHOL/RNAmatrix.csv")
+a <- m[1:60483,1]
+
+common = intersect(Target$Ensembl_ID,a)
+write.csv(common,file = "TCGA_TCHA_lncRNA.csv") 
+
+
+
+2、利用python提取lncRNA表达矩阵
+import pandas as pd
+import numpy as np
+fil1 = pd.read_csv(r'C:\Users\RockJ\Desktop\CHOL\RNAmatrix.csv', low_memory=False)
+fil2 = pd.read_csv(r'C:\Users\RockJ\Desktop\CHOL\TCGA_CHOL_lncRNA.csv', low_memory=False)
+file1 = np.array(fil1)
+file2 = np.array(fil2)
+data = []
+a = 0
+while a < 15095:  //lncRNA行数减1
+    st = file2[a]
+    a += 1
+    print(a)
+    for item in file1[0:]:
+        sh = item[0]
+        if st==sh:
+            data.append(item)
+np.savetxt(r'C:\Users\RockJ\Desktop\CHOL\TCGA_CHOL_lncRNAseq.csv', data, delimiter=',', fmt='%s')
+
+
+用R语言提取mRNA的Ensembl_ID
+library(rtracklayer)
+library(dplyr)
+setwd("")
+gtf<-import("gencode.v37.annotation.gtf.gz")
+gtf_df<-as.data.frame(gtf)
+gene_df<-select(gtf_df,c(gene_id,gene_name,gene_type))
+index<-duplicated(gene_df$gene_id)
+gene_df=gene_df[!index,]
+dim(gene_df)
+mRNA_df=gene_df[gene_df$gene_type=='protein_coding',]
+dim(mRNA_df)
+write.csv(mRNA_df,file='mRNA_df.csv')
+
+用python提取mRNA表达数据
+import pandas as pd
+import numpy as np
+fil1 = pd.read_csv(r'C:\Users\RockJ\Desktop\THCA\THCA_Merge.csv', low_memory=False)
+fil2 = pd.read_csv(r'C:\Users\RockJ\Desktop\THCA\mRNA_df.csv', low_memory=False)
+file1 = np.array(fil1)
+file2 = np.array(fil2)
+data = []
+a = 0
+while a < 19951:
+    st = file2[a]
+    a += 1
+    print(a)
+    for item in file1[0:]:
+        sh = item[0]
+        if st==sh:
+            data.append(item)
+np.savetxt(r'C:\Users\RockJ\Desktop\THCA\TCGA_THCA_mRNAseq.csv', data, delimiter=',', fmt='%s')
+
+数据log2预处理
+data1=read.csv("TCGA_THCA_mRNAseq_var25.csv",row.names=1,header=T)
+data2=read.csv("TCGA_CHOL_lncRNAseq.csv",row.names=1,header=T)
+
+ex <- data2          ###分别对数据1和数据2进行操作
+qx <- as.numeric(quantile(ex, c(0., 0.25, 0.5, 0.75, 0.99, 1.0), na.rm=T))
+LogC <- (qx[5] > 100) ||
+  (qx[6]-qx[1] > 50 && qx[2] > 0) ||
+  (qx[2] > 0 && qx[2] < 1 && qx[4] > 1 && qx[4] < 2)
+if (LogC) { ex[which(ex <= 0,arr.ind = T)] <- NaN
+data <- log2(ex)
+print("log2 transform finished")}
+else{print("log2 transform not needed")}
+data[is.na(data)]=0
+write.csv(file="THCA_mRNA_log2.csv",data1)
+write.csv(file="THCA_lncRNA_log2.csv",data)
